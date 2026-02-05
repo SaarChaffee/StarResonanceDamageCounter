@@ -1034,7 +1034,6 @@
                         m.PassiveSkillEndInfos = $root.SeqPassiveSkillEndInfo.decode(r, r.uint32());
                         break;
                     }
-                /* 不需要的暂时不读防止报错 我靠nmd 2025/10的新BETA版本又把这里改了 和2025/8/15 BETA更新一样
                 case 10: {
                         m.BuffInfos = $root.BuffInfoSync.decode(r, r.uint32());
                         break;
@@ -1043,6 +1042,7 @@
                         m.BuffEffect = $root.BuffEffectSync.decode(r, r.uint32());
                         break;
                     }
+                /* 不需要的暂时不读防止报错
                 case 12: {
                         if (!(m.FakeBullets && m.FakeBullets.length))
                             m.FakeBullets = [];
@@ -94559,7 +94559,6 @@
                         m.PassiveSkillInfos = $root.SeqPassiveSkillInfo.decode(r, r.uint32());
                         break;
                     }
-                /* 不需要的暂时不读防止报错 我靠nmd 2025/10的新BETA版本又把这里改了 和2025/8/15 BETA更新一样
                 case 7: {
                         m.BuffInfos = $root.BuffInfoSync.decode(r, r.uint32());
                         break;
@@ -94568,6 +94567,7 @@
                         m.BuffEffect = $root.BuffEffectSync.decode(r, r.uint32());
                         break;
                     }
+                /* 不需要的暂时不读防止报错
                 case 9: {
                         m.AppearType = r.int32();
                         break;

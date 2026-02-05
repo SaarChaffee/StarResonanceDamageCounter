@@ -117,9 +117,7 @@ public partial class MainWindow : Window
             BuffList.Visibility = Visibility.Visible;
         }
 
-        // Auto-resize height
-        var rows = Math.Max(1, (int)Math.Ceiling(displayItems.Count / 8.0));
-        Height = 20 + rows * 26;
+        // SizeToContent="Height" handles auto-resize
     }
 
     private static Brush GetTimeColor(double remainingMs)
