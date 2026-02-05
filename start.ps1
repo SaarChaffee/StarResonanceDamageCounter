@@ -432,6 +432,8 @@ function Get-OverlayExePath {
 }
 
 function Build-Overlay {
+    param([switch]$ForceRebuild)
+
     $overlayDir = Join-Path $PSScriptRoot "overlay\BuffOverlay"
     if (-not (Test-Path (Join-Path $overlayDir "BuffOverlay.csproj"))) {
         Write-Warning "overlay 项目不存在: $overlayDir"
@@ -444,11 +446,13 @@ function Build-Overlay {
         return $false
     }
 
-    # 如果已经有编译好的 exe，跳过
-    $existingExe = Get-OverlayExePath
-    if ($existingExe) {
-        Write-Debug "overlay 已编译，跳过"
-        return $true
+    # 如果没有强制重编，且已有 exe，跳过
+    if (-not $ForceRebuild) {
+        $existingExe = Get-OverlayExePath
+        if ($existingExe) {
+            Write-Debug "overlay 已编译，跳过 (使用 -Force 强制重编)"
+            return $true
+        }
     }
 
     Write-Info "编译 Buff 悬浮窗..."
@@ -963,9 +967,9 @@ function Invoke-InstallMode {
         $electronInstalled = $true  # 标记为已完成，因为不需要
     }
     
-    # 步骤 4: 编译 Buff 悬浮窗 (如果有 .NET SDK)
+    # 步骤 4: 编译 Buff 悬浮窗 (如果有 .NET SDK，安装模式始终重编)
     if (Test-DotNetSDK) {
-        Build-Overlay | Out-Null
+        Build-Overlay -ForceRebuild | Out-Null
     } else {
         Write-Warning "未找到 .NET 8 SDK，跳过 Buff 悬浮窗编译"
         Write-Host "如需使用悬浮窗，请安装 .NET 8 SDK: https://dotnet.microsoft.com/download/dotnet/8.0" -ForegroundColor Yellow
@@ -1091,7 +1095,7 @@ function Invoke-StartMode {
         
         # 启动 Buff 悬浮窗 (如果指定了 -Overlay)
         if ($Overlay) {
-            if (Build-Overlay) {
+            if (Build-Overlay -ForceRebuild:$Force) {
                 Start-Overlay -Port 8989
             }
         }
