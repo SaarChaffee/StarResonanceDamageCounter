@@ -972,6 +972,7 @@ class UserDataManager {
                 : 0;
             const duration = info.Duration || 0;
             const endTime = duration > 0 ? createTime + duration : 0;
+            this.logger.debug(`Buff snapshot: uid=${uid} buffUuid=${buffUuid} baseId=${info.BaseId} duration=${duration} createTime=${createTime} endTime=${endTime} layer=${info.Layer}`);
             buffMap.set(buffUuid, {
                 buffUuid,
                 baseId: info.BaseId || 0,

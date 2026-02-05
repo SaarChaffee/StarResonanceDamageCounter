@@ -292,12 +292,14 @@ class PacketProcessor {
         const BuffEffectSyncMsg = aoiSyncDelta.BuffEffect;
         if (BuffEffectSyncMsg && BuffEffectSyncMsg.BuffEffects && isTargetPlayer) {
             for (const buffEffect of BuffEffectSyncMsg.BuffEffects) {
+                this.logger.debug(`BuffEffect uid=${targetUuid.toNumber()} type=${buffEffect.Type} buffUuid=${buffEffect.BuffUuid}`);
                 this.userDataManager.processBuffEvent(targetUuid.toNumber(), buffEffect);
             }
         }
 
         const BuffInfoSyncMsg = aoiSyncDelta.BuffInfos;
-        if (BuffInfoSyncMsg && BuffInfoSyncMsg.BuffInfos && isTargetPlayer) {
+        if (BuffInfoSyncMsg && BuffInfoSyncMsg.BuffInfos && BuffInfoSyncMsg.BuffInfos.length > 0 && isTargetPlayer) {
+            this.logger.debug(`BuffInfoSync for uid ${targetUuid.toNumber()}: ${BuffInfoSyncMsg.BuffInfos.length} buffs`);
             this.userDataManager.setBuffSnapshot(targetUuid.toNumber(), BuffInfoSyncMsg.BuffInfos);
         }
 
@@ -446,7 +448,13 @@ class PacketProcessor {
     }
 
     _processSyncToMeDeltaInfo(payloadBuffer) {
-        const syncToMeDeltaInfo = pb.SyncToMeDeltaInfo.decode(payloadBuffer);
+        let syncToMeDeltaInfo;
+        try {
+            syncToMeDeltaInfo = pb.SyncToMeDeltaInfo.decode(payloadBuffer);
+        } catch (e) {
+            this.logger.debug(`SyncToMeDeltaInfo decode error: ${e.message}`);
+            return;
+        }
         // this.logger.debug(JSON.stringify(syncToMeDeltaInfo, null, 2));
 
         const aoiSyncToMeDelta = syncToMeDeltaInfo.DeltaInfo;
@@ -702,7 +710,7 @@ class PacketProcessor {
                         break;
                     case pb.EEntityType.EntChar:
                         this._processPlayerAttrs(entityUid, attrCollection.Attrs);
-                        if (entity.BuffInfos && entity.BuffInfos.BuffInfos) {
+                        if (entity.BuffInfos && entity.BuffInfos.BuffInfos && entity.BuffInfos.BuffInfos.length > 0) {
                             this.userDataManager.setBuffSnapshot(entityUid, entity.BuffInfos.BuffInfos);
                         }
                         break;
