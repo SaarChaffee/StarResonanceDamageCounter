@@ -963,6 +963,14 @@ function Invoke-InstallMode {
         $electronInstalled = $true  # 标记为已完成，因为不需要
     }
     
+    # 步骤 4: 编译 Buff 悬浮窗 (如果有 .NET SDK)
+    if (Test-DotNetSDK) {
+        Build-Overlay | Out-Null
+    } else {
+        Write-Warning "未找到 .NET 8 SDK，跳过 Buff 悬浮窗编译"
+        Write-Host "如需使用悬浮窗，请安装 .NET 8 SDK: https://dotnet.microsoft.com/download/dotnet/8.0" -ForegroundColor Yellow
+    }
+
     Write-Success "安装完成!"
     if ($electronRequired -and $electronInstalled) {
         Write-Host "现在你可以运行: .\start.ps1 -Start 来启动桌面应用" -ForegroundColor Green
