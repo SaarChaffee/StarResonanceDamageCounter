@@ -961,9 +961,12 @@ class UserDataManager {
         return Date.now() + this.serverTimeOffset;
     }
 
-    /** 全量替换 buff 列表 */
+    /** 合并 buff 信息（非全量替换） */
     setBuffSnapshot(uid, buffInfos) {
-        const buffMap = new Map();
+        if (!this.buffCache.has(uid)) {
+            this.buffCache.set(uid, new Map());
+        }
+        const buffMap = this.buffCache.get(uid);
         for (const info of buffInfos) {
             const buffUuid = info.BuffUuid;
             if (buffUuid == null) continue;
@@ -971,11 +974,17 @@ class UserDataManager {
                 ? (typeof info.CreateTime === 'object' ? info.CreateTime.toNumber() : Number(info.CreateTime))
                 : 0;
             const duration = info.Duration || 0;
+            const baseId = info.BaseId || 0;
+            // 跳过无效/元数据条目（createTime=0 且 duration=0 且 baseId 较小）
+            if (createTime === 0 && duration === 0 && baseId < 10000) {
+                this.logger.debug(`Buff skip metadata: uid=${uid} buffUuid=${buffUuid} baseId=${baseId}`);
+                continue;
+            }
             const endTime = duration > 0 ? createTime + duration : 0;
-            this.logger.debug(`Buff snapshot: uid=${uid} buffUuid=${buffUuid} baseId=${info.BaseId} duration=${duration} createTime=${createTime} endTime=${endTime} layer=${info.Layer}`);
+            this.logger.debug(`Buff merge: uid=${uid} buffUuid=${buffUuid} baseId=${baseId} duration=${duration} createTime=${createTime} endTime=${endTime} layer=${info.Layer}`);
             buffMap.set(buffUuid, {
                 buffUuid,
-                baseId: info.BaseId || 0,
+                baseId,
                 level: info.Level || 0,
                 layer: info.Layer || 1,
                 duration,
@@ -986,7 +995,6 @@ class UserDataManager {
                     : 0,
             });
         }
-        this.buffCache.set(uid, buffMap);
     }
 
     /** 增量 buff 事件处理 */
@@ -1051,20 +1059,26 @@ class UserDataManager {
     getMyBuffData() {
         const serverTime = this.getServerTime();
         const result = { serverTime, buffs: [] };
-        // 查找所有 uid 的 buff（前端只请求自己的）
         for (const [uid, buffMap] of this.buffCache) {
             const user = this.users.get(uid);
             const playerName = user ? user.name : '';
             const profession = user ? user.profession : '';
-            for (const [, buff] of buffMap) {
-                // 过滤过期 buff
-                if (buff.endTime > 0 && buff.endTime <= serverTime) continue;
+            const expired = [];
+            for (const [buffUuid, buff] of buffMap) {
+                // 清理过期 buff
+                if (buff.endTime > 0 && buff.endTime <= serverTime) {
+                    expired.push(buffUuid);
+                    continue;
+                }
                 result.buffs.push({
                     uid,
                     playerName,
                     profession,
                     ...buff,
                 });
+            }
+            for (const id of expired) {
+                buffMap.delete(id);
             }
         }
         return result;
