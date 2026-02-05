@@ -289,11 +289,16 @@ class PacketProcessor {
             }
         }
 
-        const BuffEffectSync = aoiSyncDelta.BuffEffect;
-        if (isTargetMonster && BuffEffectSync && BuffEffectSync.BuffEffects) {
-            const BuffEffects = BuffEffectSync.BuffEffects;
-            for (const BuffEffect of BuffEffects) {
+        const BuffEffectSyncMsg = aoiSyncDelta.BuffEffect;
+        if (BuffEffectSyncMsg && BuffEffectSyncMsg.BuffEffects && isTargetPlayer) {
+            for (const buffEffect of BuffEffectSyncMsg.BuffEffects) {
+                this.userDataManager.processBuffEvent(targetUuid.toNumber(), buffEffect);
             }
+        }
+
+        const BuffInfoSyncMsg = aoiSyncDelta.BuffInfos;
+        if (BuffInfoSyncMsg && BuffInfoSyncMsg.BuffInfos && isTargetPlayer) {
+            this.userDataManager.setBuffSnapshot(targetUuid.toNumber(), BuffInfoSyncMsg.BuffInfos);
         }
 
         const skillEffect = aoiSyncDelta.SkillEffects;
@@ -697,12 +702,24 @@ class PacketProcessor {
                         break;
                     case pb.EEntityType.EntChar:
                         this._processPlayerAttrs(entityUid, attrCollection.Attrs);
+                        if (entity.BuffInfos && entity.BuffInfos.BuffInfos) {
+                            this.userDataManager.setBuffSnapshot(entityUid, entity.BuffInfos.BuffInfos);
+                        }
                         break;
                     default:
                         // this.logger.debug('Get AttrCollection for Unknown EntType' + entity.EntType);
                         break;
                 }
             }
+        }
+    }
+
+    _processSyncServerTime(payloadBuffer) {
+        const msg = pb.SyncServerTime.decode(payloadBuffer);
+        if (msg.ServerMilliseconds) {
+            const serverMs = typeof msg.ServerMilliseconds === 'object'
+                ? msg.ServerMilliseconds.toNumber() : Number(msg.ServerMilliseconds);
+            this.userDataManager.updateServerTimeOffset(serverMs);
         }
     }
 
@@ -736,6 +753,9 @@ class PacketProcessor {
                 break;
             case NotifyMethod.SyncNearDeltaInfo:
                 this._processSyncNearDeltaInfo(msgPayload);
+                break;
+            case NotifyMethod.SyncServerTime:
+                this._processSyncServerTime(msgPayload);
                 break;
             default:
                 this.logger.debug(`Skipping NotifyMsg with methodId ${methodId}`);

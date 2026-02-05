@@ -1,0 +1,65 @@
+<Window x:Class="BuffOverlay.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="BuffOverlay"
+        Width="400" Height="60"
+        WindowStyle="None"
+        AllowsTransparency="True"
+        Topmost="True"
+        Background="Transparent"
+        ShowInTaskbar="False"
+        ResizeMode="NoResize"
+        MouseLeftButtonDown="Window_MouseLeftButtonDown"
+        MouseDoubleClick="Window_MouseDoubleClick"
+        MouseRightButtonUp="Window_MouseRightButtonUp">
+
+    <Window.Resources>
+        <!-- Buff tag style -->
+        <Style x:Key="BuffTag" TargetType="Border">
+            <Setter Property="Background" Value="#CC2a2a3e"/>
+            <Setter Property="CornerRadius" Value="3"/>
+            <Setter Property="Padding" Value="5,2"/>
+            <Setter Property="Margin" Value="2,0"/>
+        </Style>
+    </Window.Resources>
+
+    <Border Background="#881a1a2e" CornerRadius="5" Padding="4,2">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+
+            <!-- Status indicator (tiny dot) -->
+            <StackPanel Grid.Row="0" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,0,2,0">
+                <Ellipse x:Name="StatusDot" Width="6" Height="6" Fill="Gray" VerticalAlignment="Center"/>
+            </StackPanel>
+
+            <!-- Buff list: horizontal wrap -->
+            <ItemsControl x:Name="BuffList" Grid.Row="1">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <WrapPanel Orientation="Horizontal"/>
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <Border Style="{StaticResource BuffTag}">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="{Binding DisplayId}" Foreground="#CCCCCC" FontSize="11" VerticalAlignment="Center"/>
+                                <TextBlock Text="{Binding TimeText}" Foreground="{Binding TimeColor}" FontSize="11" Margin="4,0,0,0" VerticalAlignment="Center"/>
+                                <TextBlock Text="{Binding LayerText}" Foreground="#FFA500" FontSize="9" Margin="2,0,0,0" VerticalAlignment="Bottom"
+                                           Visibility="{Binding LayerVisibility}"/>
+                            </StackPanel>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <!-- Empty state -->
+            <TextBlock x:Name="EmptyText" Grid.Row="1" Text="--"
+                       Foreground="#666666" FontSize="11" HorizontalAlignment="Center" VerticalAlignment="Center"
+                       Visibility="Collapsed"/>
+        </Grid>
+    </Border>
+</Window>

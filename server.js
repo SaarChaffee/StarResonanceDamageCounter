@@ -498,6 +498,9 @@ class UserDataManager {
         };
         this.maxHpMonster = '';
 
+        this.serverTimeOffset = 0;          // serverTime - Date.now()
+        this.buffCache = new Map();          // Map<uid, Map<buffUuid, BuffEntry>>
+
         // 自动保存
         this.lastAutoSaveTime = 0;
         this.lastLogTime = 0;
@@ -857,6 +860,7 @@ class UserDataManager {
         this.startTime = Date.now();
         this.lastAutoSaveTime = 0;
         this.lastLogTime = 0;
+        this.buffCache.clear();
         this.saveAllUserData(usersToSave, saveStartTime);
 
         if (gzipStream) {
@@ -945,6 +949,124 @@ class UserDataManager {
             this.logger.error('Failed to save all user data:', error);
             throw error;
         }
+    }
+
+    /** 更新服务器时间偏移 */
+    updateServerTimeOffset(serverMs) {
+        this.serverTimeOffset = serverMs - Date.now();
+    }
+
+    /** 获取当前服务器时间 */
+    getServerTime() {
+        return Date.now() + this.serverTimeOffset;
+    }
+
+    /** 全量替换 buff 列表 */
+    setBuffSnapshot(uid, buffInfos) {
+        const buffMap = new Map();
+        for (const info of buffInfos) {
+            const buffUuid = info.BuffUuid;
+            if (buffUuid == null) continue;
+            const createTime = info.CreateTime
+                ? (typeof info.CreateTime === 'object' ? info.CreateTime.toNumber() : Number(info.CreateTime))
+                : 0;
+            const duration = info.Duration || 0;
+            const endTime = duration > 0 ? createTime + duration : 0;
+            buffMap.set(buffUuid, {
+                buffUuid,
+                baseId: info.BaseId || 0,
+                level: info.Level || 0,
+                layer: info.Layer || 1,
+                duration,
+                createTime,
+                endTime,
+                fireUuid: info.FireUuid
+                    ? (typeof info.FireUuid === 'object' ? info.FireUuid.toNumber() : Number(info.FireUuid))
+                    : 0,
+            });
+        }
+        this.buffCache.set(uid, buffMap);
+    }
+
+    /** 增量 buff 事件处理 */
+    processBuffEvent(uid, buffEffect) {
+        if (!this.buffCache.has(uid)) {
+            this.buffCache.set(uid, new Map());
+        }
+        const buffMap = this.buffCache.get(uid);
+        const buffUuid = buffEffect.BuffUuid;
+        if (buffUuid == null) return;
+
+        const type = buffEffect.Type || 0;
+        switch (type) {
+            case 1: // BuffEventAddTo
+                buffMap.set(buffUuid, {
+                    buffUuid,
+                    baseId: 0,
+                    level: 0,
+                    layer: 1,
+                    duration: 0,
+                    createTime: this.getServerTime(),
+                    endTime: 0,
+                    fireUuid: buffEffect.HostUuid
+                        ? (typeof buffEffect.HostUuid === 'object' ? buffEffect.HostUuid.toNumber() : Number(buffEffect.HostUuid))
+                        : 0,
+                });
+                break;
+            case 2: // BuffEventRemove
+                buffMap.delete(buffUuid);
+                break;
+            case 3: { // BuffEventReplace
+                const existing = buffMap.get(buffUuid);
+                if (existing) {
+                    existing.createTime = this.getServerTime();
+                    if (existing.duration > 0) {
+                        existing.endTime = existing.createTime + existing.duration;
+                    }
+                }
+                break;
+            }
+            case 5: { // BuffEventStackLayer
+                const existing = buffMap.get(buffUuid);
+                if (existing) {
+                    existing.layer++;
+                }
+                break;
+            }
+            case 6: { // BuffEventRemoveLayer
+                const existing = buffMap.get(buffUuid);
+                if (existing) {
+                    existing.layer--;
+                    if (existing.layer <= 0) {
+                        buffMap.delete(buffUuid);
+                    }
+                }
+                break;
+            }
+        }
+    }
+
+    /** 获取自己的 buff 数据 */
+    getMyBuffData() {
+        const serverTime = this.getServerTime();
+        const result = { serverTime, buffs: [] };
+        // 查找所有 uid 的 buff（前端只请求自己的）
+        for (const [uid, buffMap] of this.buffCache) {
+            const user = this.users.get(uid);
+            const playerName = user ? user.name : '';
+            const profession = user ? user.profession : '';
+            for (const [, buff] of buffMap) {
+                // 过滤过期 buff
+                if (buff.endTime > 0 && buff.endTime <= serverTime) continue;
+                result.buffs.push({
+                    uid,
+                    playerName,
+                    profession,
+                    ...buff,
+                });
+            }
+        }
+        return result;
     }
 
     checkTimeoutClear() {
@@ -1082,6 +1204,10 @@ async function main() {
             enemy: enemiesData,
         };
         res.json(data);
+    });
+
+    app.get('/api/buffs', (req, res) => {
+        res.json({ code: 0, ...userDataManager.getMyBuffData() });
     });
 
     app.get('/api/clear', (req, res) => {
