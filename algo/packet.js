@@ -289,8 +289,12 @@ class PacketProcessor {
             }
         }
 
+        // 只处理当前玩家自己的 buff
+        const isCurrentPlayer = isTargetPlayer && !currentUserUuid.isZero() &&
+            targetUuid.toNumber() === currentUserUuid.shiftRight(16).toNumber();
+
         const BuffEffectSyncMsg = aoiSyncDelta.BuffEffect;
-        if (BuffEffectSyncMsg && BuffEffectSyncMsg.BuffEffects && isTargetPlayer) {
+        if (BuffEffectSyncMsg && BuffEffectSyncMsg.BuffEffects && isCurrentPlayer) {
             for (const buffEffect of BuffEffectSyncMsg.BuffEffects) {
                 this.logger.debug(`BuffEffect uid=${targetUuid.toNumber()} type=${buffEffect.Type} buffUuid=${buffEffect.BuffUuid}`);
                 this.userDataManager.processBuffEvent(targetUuid.toNumber(), buffEffect);
@@ -298,7 +302,7 @@ class PacketProcessor {
         }
 
         const BuffInfoSyncMsg = aoiSyncDelta.BuffInfos;
-        if (BuffInfoSyncMsg && BuffInfoSyncMsg.BuffInfos && BuffInfoSyncMsg.BuffInfos.length > 0 && isTargetPlayer) {
+        if (BuffInfoSyncMsg && BuffInfoSyncMsg.BuffInfos && BuffInfoSyncMsg.BuffInfos.length > 0 && isCurrentPlayer) {
             this.logger.debug(`BuffInfoSync for uid ${targetUuid.toNumber()}: ${BuffInfoSyncMsg.BuffInfos.length} buffs`);
             this.userDataManager.setBuffSnapshot(targetUuid.toNumber(), BuffInfoSyncMsg.BuffInfos);
         }
