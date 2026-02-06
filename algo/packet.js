@@ -468,6 +468,27 @@ class PacketProcessor {
         try {
             syncToMeDeltaInfo = pb.SyncToMeDeltaInfo.decode(payloadBuffer);
         } catch (e) {
+            // Try partial decode - SyncToMeDeltaInfo wraps AoiSyncToMeDelta at field 1
+            try {
+                const aoiSyncToMeDelta = pb.AoiSyncToMeDelta.decode(payloadBuffer);
+                if (aoiSyncToMeDelta && aoiSyncToMeDelta.BaseDelta) {
+                    this.logger.debug(`SyncToMeDeltaInfo partial decode success`);
+                    this._processAoiSyncDelta(aoiSyncToMeDelta.BaseDelta);
+                    return;
+                }
+            } catch (e2) {
+                // Also try decoding directly as AoiSyncDelta
+                try {
+                    const aoiSyncDelta = pb.AoiSyncDelta.decode(payloadBuffer);
+                    if (aoiSyncDelta) {
+                        this.logger.debug(`SyncToMeDeltaInfo direct AoiSyncDelta decode success`);
+                        this._processAoiSyncDelta(aoiSyncDelta);
+                        return;
+                    }
+                } catch (e3) {
+                    // Fall through to error log
+                }
+            }
             this.logger.debug(`SyncToMeDeltaInfo decode error: ${e.message}`);
             return;
         }
