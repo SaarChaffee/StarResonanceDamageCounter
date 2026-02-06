@@ -489,7 +489,9 @@ class PacketProcessor {
                     // Fall through to error log
                 }
             }
-            this.logger.debug(`SyncToMeDeltaInfo decode error: ${e.message}`);
+            // Log first 200 bytes of failing packet for analysis
+            const hexPreview = payloadBuffer.slice(0, Math.min(200, payloadBuffer.length)).toString('hex');
+            this.logger.debug(`SyncToMeDeltaInfo decode error: ${e.message} | first bytes: ${hexPreview}`);
             return;
         }
         // this.logger.debug(JSON.stringify(syncToMeDeltaInfo, null, 2));
@@ -813,7 +815,32 @@ class PacketProcessor {
     }
 
     _processReturnMsg(reader, isZstdCompressed) {
-        this.logger.debug(`Unimplemented processing return`);
+        // Return messages are responses to client requests
+        // They might contain buff data in some cases
+        try {
+            const stubId = reader.readUInt32();
+            let msgPayload = reader.readRemaining();
+
+            if (isZstdCompressed) {
+                msgPayload = this._decompressPayload(msgPayload);
+            }
+
+            // Try to decode as various types that might contain buff data
+            try {
+                const aoiSyncDelta = pb.AoiSyncDelta.decode(msgPayload);
+                if (aoiSyncDelta && (aoiSyncDelta.BuffInfos || aoiSyncDelta.BuffEffect)) {
+                    this.logger.debug(`Return msg contains AoiSyncDelta with buff data`);
+                    this._processAoiSyncDelta(aoiSyncDelta);
+                    return;
+                }
+            } catch (e) {
+                // Not an AoiSyncDelta
+            }
+
+            this.logger.debug(`Unimplemented processing return (stubId=${stubId})`);
+        } catch (e) {
+            this.logger.debug(`Return msg parse error: ${e.message}`);
+        }
     }
 
     processPacket(packets) {

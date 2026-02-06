@@ -1082,15 +1082,22 @@ class UserDataManager {
     getMyBuffData() {
         const serverTime = this.getServerTime();
         const result = { serverTime, buffs: [] };
+        // 过期容忍时间（毫秒）- 保留过期buff一段时间以应对同步延迟
+        const EXPIRY_GRACE_PERIOD = 3000;
+
         for (const [uid, buffMap] of this.buffCache) {
             const user = this.users.get(uid);
             const playerName = user ? user.name : '';
             const profession = user ? user.profession : '';
             const expired = [];
             for (const [buffUuid, buff] of buffMap) {
-                // 清理过期 buff
-                if (buff.endTime > 0 && buff.endTime <= serverTime) {
+                // 清理过期 buff（带容忍时间）
+                if (buff.endTime > 0 && buff.endTime + EXPIRY_GRACE_PERIOD <= serverTime) {
                     expired.push(buffUuid);
+                    continue;
+                }
+                // 跳过已过期但在容忍时间内的buff（不显示但不删除）
+                if (buff.endTime > 0 && buff.endTime <= serverTime) {
                     continue;
                 }
                 result.buffs.push({
