@@ -1004,19 +1004,39 @@ class UserDataManager {
             }
 
             const endTime = duration > 0 ? createTime + duration : 0;
-            this.logger.debug(`Buff merge: uid=${uid} buffUuid=${buffUuid} baseId=${baseId} duration=${duration} createTime=${createTime} endTime=${endTime} layer=${info.Layer}`);
-            buffMap.set(buffUuid, {
-                buffUuid,
-                baseId,
-                level: info.Level || 0,
-                layer: info.Layer || 1,
-                duration,
-                createTime,
-                endTime,
-                fireUuid: info.FireUuid
-                    ? (typeof info.FireUuid === 'object' ? info.FireUuid.toNumber() : Number(info.FireUuid))
-                    : 0,
-            });
+
+            // 使用 baseId 作为主键存储（而不是 buffUuid），这样同一个 buff 刷新时可以正确更新
+            // 如果已有同 baseId 的 buff，检查是否需要更新
+            let shouldUpdate = true;
+            for (const [existingKey, existingBuff] of buffMap) {
+                if (existingBuff.baseId === baseId && baseId !== 0) {
+                    // 同一个 baseId 的 buff，更新现有条目
+                    if (createTime > existingBuff.createTime) {
+                        this.logger.debug(`Buff update: uid=${uid} baseId=${baseId} oldBuffUuid=${existingKey} newBuffUuid=${buffUuid} duration=${duration}`);
+                        buffMap.delete(existingKey);
+                    } else {
+                        // 旧数据，不更新
+                        shouldUpdate = false;
+                    }
+                    break;
+                }
+            }
+
+            if (shouldUpdate) {
+                this.logger.debug(`Buff merge: uid=${uid} buffUuid=${buffUuid} baseId=${baseId} duration=${duration} createTime=${createTime} endTime=${endTime} layer=${info.Layer}`);
+                buffMap.set(buffUuid, {
+                    buffUuid,
+                    baseId,
+                    level: info.Level || 0,
+                    layer: info.Layer || 1,
+                    duration,
+                    createTime,
+                    endTime,
+                    fireUuid: info.FireUuid
+                        ? (typeof info.FireUuid === 'object' ? info.FireUuid.toNumber() : Number(info.FireUuid))
+                        : 0,
+                });
+            }
         }
     }
 

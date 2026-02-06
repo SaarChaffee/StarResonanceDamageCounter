@@ -468,25 +468,43 @@ class PacketProcessor {
         try {
             syncToMeDeltaInfo = pb.SyncToMeDeltaInfo.decode(payloadBuffer);
         } catch (e) {
-            // Try partial decode - SyncToMeDeltaInfo wraps AoiSyncToMeDelta at field 1
-            try {
-                const aoiSyncToMeDelta = pb.AoiSyncToMeDelta.decode(payloadBuffer);
-                if (aoiSyncToMeDelta && aoiSyncToMeDelta.BaseDelta) {
-                    this.logger.debug(`SyncToMeDeltaInfo partial decode success`);
-                    this._processAoiSyncDelta(aoiSyncToMeDelta.BaseDelta);
-                    return;
-                }
-            } catch (e2) {
-                // Also try decoding directly as AoiSyncDelta
+            // Try partial decode with length limit - truncate before the error
+            const errorMatch = e.message.match(/offset (\d+)/);
+            if (errorMatch) {
+                const errorOffset = parseInt(errorMatch[1]);
+                // Try decoding only up to the error point
+                const truncatedBuffer = payloadBuffer.slice(0, errorOffset);
                 try {
-                    const aoiSyncDelta = pb.AoiSyncDelta.decode(payloadBuffer);
-                    if (aoiSyncDelta) {
-                        this.logger.debug(`SyncToMeDeltaInfo direct AoiSyncDelta decode success`);
-                        this._processAoiSyncDelta(aoiSyncDelta);
+                    // Try as AoiSyncToMeDelta (inner structure)
+                    const aoiSyncToMeDelta = pb.AoiSyncToMeDelta.decode(truncatedBuffer);
+                    if (aoiSyncToMeDelta && aoiSyncToMeDelta.BaseDelta) {
+                        this.logger.debug(`SyncToMeDeltaInfo truncated decode success at offset ${errorOffset}`);
+                        if (aoiSyncToMeDelta.BaseDelta.BuffInfos) {
+                            this.logger.debug(`Found BuffInfos in truncated packet!`);
+                        }
+                        this._processAoiSyncDelta(aoiSyncToMeDelta.BaseDelta);
                         return;
                     }
-                } catch (e3) {
-                    // Fall through to error log
+                } catch (e2) {
+                    // Try skipping outer wrapper (field 1 length-delimited)
+                    try {
+                        // Skip varint length prefix if present
+                        let offset = 0;
+                        if (payloadBuffer[0] === 0x0a) { // field 1, length-delimited
+                            offset = 1;
+                            while (offset < payloadBuffer.length && (payloadBuffer[offset] & 0x80)) offset++;
+                            offset++; // skip last byte of varint
+                        }
+                        const innerBuffer = payloadBuffer.slice(offset, errorOffset);
+                        const aoiSyncToMeDelta2 = pb.AoiSyncToMeDelta.decode(innerBuffer);
+                        if (aoiSyncToMeDelta2 && aoiSyncToMeDelta2.BaseDelta) {
+                            this.logger.debug(`SyncToMeDeltaInfo inner decode success`);
+                            this._processAoiSyncDelta(aoiSyncToMeDelta2.BaseDelta);
+                            return;
+                        }
+                    } catch (e3) {
+                        // Fall through
+                    }
                 }
             }
             // Log first 200 bytes of failing packet for analysis
