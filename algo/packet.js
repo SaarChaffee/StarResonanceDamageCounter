@@ -438,7 +438,13 @@ class PacketProcessor {
     }
 
     _processSyncNearDeltaInfo(payloadBuffer) {
-        const syncNearDeltaInfo = pb.SyncNearDeltaInfo.decode(payloadBuffer);
+        let syncNearDeltaInfo;
+        try {
+            syncNearDeltaInfo = pb.SyncNearDeltaInfo.decode(payloadBuffer);
+        } catch (e) {
+            this.logger.debug(`SyncNearDeltaInfo decode error: ${e.message}`);
+            return;
+        }
         // this.logger.debug(JSON.stringify(syncNearDeltaInfo, null, 2));
 
         if (!syncNearDeltaInfo.DeltaInfos) return;
