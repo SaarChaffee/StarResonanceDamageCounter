@@ -22,6 +22,7 @@ const { exec } = require('child_process');
 const findDefaultNetworkDevice = require('./algo/netInterfaceUtil');
 
 const skillConfig = require('./tables/skill_names_new.json');
+const buffConfig = require('./tables/buff_names.json');
 const VERSION = '3.3.6';
 const SETTINGS_PATH = path.join('./settings.json');
 let globalSettings = {
@@ -1091,6 +1092,7 @@ class UserDataManager {
                     playerName,
                     profession,
                     ...buff,
+                    buffName: buffConfig[buff.baseId] || null,
                 });
             }
             for (const id of expired) {

@@ -48,4 +48,7 @@ public class BuffEntry
 
     [JsonPropertyName("fireUuid")]
     public long FireUuid { get; set; }
+
+    [JsonPropertyName("buffName")]
+    public string? BuffName { get; set; }
 }

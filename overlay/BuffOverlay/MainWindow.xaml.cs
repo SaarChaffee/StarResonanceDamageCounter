@@ -94,7 +94,7 @@ public partial class MainWindow : Window
 
             var item = new BuffDisplayItem
             {
-                DisplayId = buff.BaseId > 0 ? buff.BaseId.ToString() : buff.BuffUuid.ToString(),
+                DisplayId = buff.BuffName ?? (buff.BaseId > 0 ? buff.BaseId.ToString() : buff.BuffUuid.ToString()),
                 TimeText = timeText,
                 TimeColor = GetTimeColor(remaining),
                 Layer = buff.Layer,
