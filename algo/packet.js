@@ -720,8 +720,11 @@ class PacketProcessor {
                         break;
                     case pb.EEntityType.EntChar:
                         this._processPlayerAttrs(entityUid, attrCollection.Attrs);
-                        if (entity.BuffInfos && entity.BuffInfos.BuffInfos && entity.BuffInfos.BuffInfos.length > 0) {
-                            this.userDataManager.setBuffSnapshot(entityUid, entity.BuffInfos.BuffInfos);
+                        // Only process buffs for the current player
+                        if (!currentUserUuid.isZero() && entityUid === currentUserUuid.shiftRight(16).toNumber()) {
+                            if (entity.BuffInfos && entity.BuffInfos.BuffInfos && entity.BuffInfos.BuffInfos.length > 0) {
+                                this.userDataManager.setBuffSnapshot(entityUid, entity.BuffInfos.BuffInfos);
+                            }
                         }
                         break;
                     default:
