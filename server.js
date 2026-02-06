@@ -985,6 +985,8 @@ class UserDataManager {
                 if (buffMap.has(baseId)) {
                     this.logger.debug(`Buff remove signal: uid=${uid} removing buffUuid=${baseId}`);
                     buffMap.delete(baseId);
+                } else {
+                    this.logger.debug(`Buff remove signal (already gone): uid=${uid} buffUuid=${baseId}`);
                 }
                 continue;
             }
