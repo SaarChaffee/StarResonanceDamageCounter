@@ -970,7 +970,10 @@ class UserDataManager {
         const buffMap = this.buffCache.get(uid);
         for (const info of buffInfos) {
             const buffUuid = info.BuffUuid;
-            if (buffUuid == null) continue;
+            if (buffUuid == null) {
+                this.logger.debug(`Buff null uuid: uid=${uid} info=${JSON.stringify(info)}`);
+                continue;
+            }
             const createTime = info.CreateTime
                 ? (typeof info.CreateTime === 'object' ? info.CreateTime.toNumber() : Number(info.CreateTime))
                 : 0;
@@ -988,6 +991,7 @@ class UserDataManager {
 
             // buffUuid=1 + baseId=X → 添加确认，忽略
             if (buffUuid === 1 && createTime === 0 && duration === 0) {
+                this.logger.debug(`Buff add-confirm: uid=${uid} baseId=${baseId}`);
                 continue;
             }
 
