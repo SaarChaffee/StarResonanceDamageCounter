@@ -975,11 +975,27 @@ class UserDataManager {
                 : 0;
             const duration = info.Duration || 0;
             const baseId = info.BaseId || 0;
-            // 跳过无效/元数据条目（createTime=0 且 duration=0 且 baseId 较小）
-            if (createTime === 0 && duration === 0 && baseId < 10000) {
-                this.logger.debug(`Buff skip metadata: uid=${uid} buffUuid=${buffUuid} baseId=${baseId}`);
+
+            // buffUuid=2 + baseId=X → 移除信号：删除 buffUuid=X
+            if (buffUuid === 2 && createTime === 0 && duration === 0) {
+                if (buffMap.has(baseId)) {
+                    this.logger.debug(`Buff remove signal: uid=${uid} removing buffUuid=${baseId}`);
+                    buffMap.delete(baseId);
+                }
                 continue;
             }
+
+            // buffUuid=1 + baseId=X → 添加确认，忽略
+            if (buffUuid === 1 && createTime === 0 && duration === 0) {
+                continue;
+            }
+
+            // 跳过其他无效条目
+            if (createTime === 0 && duration === 0) {
+                this.logger.debug(`Buff skip: uid=${uid} buffUuid=${buffUuid} baseId=${baseId}`);
+                continue;
+            }
+
             const endTime = duration > 0 ? createTime + duration : 0;
             this.logger.debug(`Buff merge: uid=${uid} buffUuid=${buffUuid} baseId=${baseId} duration=${duration} createTime=${createTime} endTime=${endTime} layer=${info.Layer}`);
             buffMap.set(buffUuid, {
