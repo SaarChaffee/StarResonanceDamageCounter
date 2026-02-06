@@ -294,10 +294,16 @@ class PacketProcessor {
             targetUuid.toNumber() === currentUserUuid.shiftRight(16).toNumber();
 
         const BuffEffectSyncMsg = aoiSyncDelta.BuffEffect;
-        if (BuffEffectSyncMsg && BuffEffectSyncMsg.BuffEffects && isCurrentPlayer) {
-            for (const buffEffect of BuffEffectSyncMsg.BuffEffects) {
-                this.logger.debug(`BuffEffect uid=${targetUuid.toNumber()} type=${buffEffect.Type} buffUuid=${buffEffect.BuffUuid}`);
-                this.userDataManager.processBuffEvent(targetUuid.toNumber(), buffEffect);
+        if (BuffEffectSyncMsg) {
+            if (!BuffEffectSyncMsg.BuffEffects || BuffEffectSyncMsg.BuffEffects.length === 0) {
+                this.logger.debug(`BuffEffect empty for uid=${targetUuid.toNumber()}`);
+            } else if (!isCurrentPlayer) {
+                this.logger.debug(`BuffEffect skipped (not current player): uid=${targetUuid.toNumber()} count=${BuffEffectSyncMsg.BuffEffects.length}`);
+            } else {
+                for (const buffEffect of BuffEffectSyncMsg.BuffEffects) {
+                    this.logger.debug(`BuffEffect uid=${targetUuid.toNumber()} type=${buffEffect.Type} buffUuid=${buffEffect.BuffUuid}`);
+                    this.userDataManager.processBuffEvent(targetUuid.toNumber(), buffEffect);
+                }
             }
         }
 
