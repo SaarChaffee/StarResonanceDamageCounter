@@ -1168,8 +1168,15 @@ class UserDataManager {
             const profession = user ? user.profession : '';
             const stale = [];
             for (const [buffUuid, buff] of buffMap) {
-                // 不主动删除过期 buff — 游戏可能静默刷新了 buff 持续时间
-                // 仅清理超过 5 分钟仍未收到 remove 事件的 buff（兜底）
+                // 自动续期：endTime 已过 1 秒仍未收到 remove 事件，
+                // 说明游戏静默刷新了此 buff（重新施放技能时游戏不发送任何事件）
+                if (buff.endTime > 0 && buff.duration > 0 && buff.endTime + 1000 < serverTime) {
+                    while (buff.endTime + 1000 < serverTime) {
+                        buff.createTime = buff.endTime;
+                        buff.endTime += buff.duration;
+                    }
+                }
+                // 仅清理 endTime 仍远落后于当前时间的 buff（非自动续期的过期 buff）
                 if (buff.endTime > 0 && buff.endTime + 300000 <= serverTime) {
                     stale.push(buffUuid);
                     continue;

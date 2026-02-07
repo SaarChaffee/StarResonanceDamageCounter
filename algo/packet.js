@@ -443,6 +443,7 @@ class PacketProcessor {
         const BuffEffectSyncMsg = aoiSyncDelta.BuffEffect;
         if (BuffEffectSyncMsg && BuffEffectSyncMsg.BuffEffects && isCurrentPlayer) {
             for (const buffEffect of BuffEffectSyncMsg.BuffEffects) {
+                this.logger.debug(`Field11 BuffEffect: Type=${buffEffect.Type} BuffUuid=${buffEffect.BuffUuid} HostUuid=${buffEffect.HostUuid} TriggerTime=${buffEffect.TriggerTime}`);
                 this.userDataManager.processBuffEvent(targetUuid.toNumber(), buffEffect);
             }
         }
@@ -455,6 +456,10 @@ class PacketProcessor {
         const BuffInfoSyncMsg = aoiSyncDelta.BuffInfos;
         if (BuffInfoSyncMsg && BuffInfoSyncMsg.BuffInfos && BuffInfoSyncMsg.BuffInfos.length > 0 && isCurrentPlayer) {
             this.logger.debug(`BuffInfoSync for uid ${targetUuid.toNumber()}: ${BuffInfoSyncMsg.BuffInfos.length} buffs`);
+            for (const info of BuffInfoSyncMsg.BuffInfos) {
+                const ct = info.CreateTime ? (typeof info.CreateTime === 'object' ? info.CreateTime.toNumber() : Number(info.CreateTime)) : 0;
+                this.logger.debug(`  BuffInfo: uuid=${info.BuffUuid} baseId=${info.BaseId} dur=${info.Duration} createTime=${ct} layer=${info.Layer} level=${info.Level}`);
+            }
             this.userDataManager.setBuffSnapshot(targetUuid.toNumber(), BuffInfoSyncMsg.BuffInfos);
         }
 
@@ -464,11 +469,11 @@ class PacketProcessor {
             try {
                 const buffEvents = decodeBuffField10(buffInfosRaw);
                 for (const ev of buffEvents) {
+                    // 记录所有 field10 事件，包括未处理的 opType
+                    this.logger.debug(`Field10 event: opType=${ev.opType} slot=${ev.slot} buffId=${ev.buffId} dur=${ev.durationMs} stack=${ev.stack}`);
                     if (ev.opType === 1 && ev.buffId && ev.buffId !== 1) {
-                        this.logger.debug(`Field10 add: slot=${ev.slot} buffId=${ev.buffId} dur=${ev.durationMs} stack=${ev.stack}`);
                         this.userDataManager.processField10BuffAdd(targetUuid.toNumber(), ev);
                     } else if (ev.opType === 2) {
-                        this.logger.debug(`Field10 remove: slot=${ev.slot} buffId=${ev.buffId}`);
                         this.userDataManager.processField10BuffRemove(targetUuid.toNumber(), ev);
                     }
                 }
