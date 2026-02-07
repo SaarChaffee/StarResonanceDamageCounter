@@ -1035,7 +1035,17 @@
                         break;
                     }
                 case 10: {
-                        m.BuffInfos = $root.BuffInfoSync.decode(r, r.uint32());
+                        var field10Len = r.uint32();
+                        var field10Start = r.pos;
+                        var field10End = field10Start + field10Len;
+                        m.BuffInfosRaw = r.buf.subarray(field10Start, field10End);
+                        try {
+                            var subReader = $Reader.create(m.BuffInfosRaw);
+                            m.BuffInfos = $root.BuffInfoSync.decode(subReader);
+                        } catch (e) {
+                            m.BuffInfos = null;
+                        }
+                        r.pos = field10End;
                         break;
                     }
                 case 11: {

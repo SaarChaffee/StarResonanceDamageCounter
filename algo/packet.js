@@ -256,6 +256,153 @@ const streamReadString = (reader) => {
 
 let currentUserUuid = Long.ZERO;
 
+// ===== Field 10 raw binary parsing (buff operations) =====
+function readVarint(buf, pos) {
+    let result = 0, shift = 0;
+    while (pos < buf.length) {
+        const b = buf[pos++];
+        result |= (b & 0x7f) << shift;
+        if ((b & 0x80) === 0) return { value: result >>> 0, pos };
+        shift += 7;
+        if (shift > 35) return null;
+    }
+    return null;
+}
+
+function readInt32(buf, pos) {
+    return readVarint(buf, pos);
+}
+
+function skipByWireType(buf, pos, wt) {
+    switch (wt) {
+        case 0: { // varint
+            while (pos < buf.length && (buf[pos++] & 0x80)) {}
+            return pos;
+        }
+        case 2: { // length-delimited
+            const info = readVarint(buf, pos);
+            if (!info) return buf.length;
+            return info.pos + info.value;
+        }
+        case 1: return pos + 8;
+        case 5: return pos + 4;
+        default: return buf.length;
+    }
+}
+
+function decodeBuffData(bytes) {
+    let pos = 0;
+    const len = bytes.length;
+    const d = { ownerSlot: null, buffId: null, stack: null, durationMs: null };
+    while (pos < len) {
+        const tagInfo = readVarint(bytes, pos);
+        if (!tagInfo) break;
+        const tag = tagInfo.value;
+        pos = tagInfo.pos;
+        const field = tag >>> 3;
+        const wt = tag & 7;
+        switch (field) {
+            case 1: { const info = readInt32(bytes, pos); if (!info) return d; d.ownerSlot = info.value; pos = info.pos; break; }
+            case 2: { const info = readInt32(bytes, pos); if (!info) return d; d.buffId = info.value; pos = info.pos; break; }
+            case 3: { const info = readInt32(bytes, pos); if (!info) return d; d.stack = info.value; pos = info.pos; break; }
+            case 11: { const info = readInt32(bytes, pos); if (!info) return d; d.durationMs = info.value; pos = info.pos; break; }
+            default: { pos = skipByWireType(bytes, pos, wt); break; }
+        }
+    }
+    return d;
+}
+
+function decodeBuffPayload(bytes) {
+    let pos = 0;
+    const len = bytes.length;
+    let payloadType = null, data = null;
+    while (pos < len) {
+        const tagInfo = readVarint(bytes, pos);
+        if (!tagInfo) break;
+        const tag = tagInfo.value;
+        pos = tagInfo.pos;
+        const field = tag >>> 3;
+        const wt = tag & 7;
+        switch (field) {
+            case 1: { const info = readInt32(bytes, pos); if (!info) return null; payloadType = info.value; pos = info.pos; break; }
+            case 2: {
+                const lInfo = readVarint(bytes, pos);
+                if (!lInfo) return null;
+                const innerLen = lInfo.value;
+                const start = lInfo.pos;
+                data = decodeBuffData(bytes.subarray(start, start + innerLen));
+                pos = start + innerLen;
+                break;
+            }
+            default: { pos = skipByWireType(bytes, pos, wt); break; }
+        }
+    }
+    return { payloadType, data };
+}
+
+function decodeBuffEntry(bytes) {
+    let pos = 0;
+    const len = bytes.length;
+    let opType = null, slot = null, payload = null;
+    while (pos < len) {
+        const tagInfo = readVarint(bytes, pos);
+        if (!tagInfo) break;
+        const tag = tagInfo.value;
+        pos = tagInfo.pos;
+        const field = tag >>> 3;
+        const wt = tag & 7;
+        switch (field) {
+            case 1: { const info = readInt32(bytes, pos); if (!info) return null; opType = info.value; pos = info.pos; break; }
+            case 2: { const info = readInt32(bytes, pos); if (!info) return null; slot = info.value; pos = info.pos; break; }
+            case 5: {
+                const lInfo = readVarint(bytes, pos);
+                if (!lInfo) return null;
+                const innerLen = lInfo.value;
+                const start = lInfo.pos;
+                payload = decodeBuffPayload(bytes.subarray(start, start + innerLen));
+                pos = start + innerLen;
+                break;
+            }
+            default: { pos = skipByWireType(bytes, pos, wt); break; }
+        }
+    }
+    const ev = { opType, slot };
+    if (payload && payload.data) {
+        ev.buffId = payload.data.buffId;
+        ev.stack = payload.data.stack;
+        ev.durationMs = payload.data.durationMs;
+    }
+    return ev;
+}
+
+function decodeBuffField10(bytes) {
+    const buf = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+    const len = buf.length;
+    let pos = 0;
+    const events = [];
+    while (pos < len) {
+        const tagInfo = readVarint(buf, pos);
+        if (!tagInfo) break;
+        const tag = tagInfo.value;
+        pos = tagInfo.pos;
+        const field = tag >>> 3;
+        const wt = tag & 7;
+        if (field === 2 && wt === 2) {
+            const lInfo = readVarint(buf, pos);
+            if (!lInfo) break;
+            const innerLen = lInfo.value;
+            const start = lInfo.pos;
+            const entryBytes = buf.subarray(start, start + innerLen);
+            const ev = decodeBuffEntry(entryBytes);
+            if (ev) events.push(ev);
+            pos = start + innerLen;
+        } else {
+            pos = skipByWireType(buf, pos, wt);
+        }
+    }
+    return events;
+}
+
 class PacketProcessor {
     constructor({ logger, userDataManager }) {
         this.logger = logger;
@@ -294,16 +441,9 @@ class PacketProcessor {
             targetUuid.toNumber() === currentUserUuid.shiftRight(16).toNumber();
 
         const BuffEffectSyncMsg = aoiSyncDelta.BuffEffect;
-        if (BuffEffectSyncMsg) {
-            if (!BuffEffectSyncMsg.BuffEffects || BuffEffectSyncMsg.BuffEffects.length === 0) {
-                this.logger.debug(`BuffEffect empty for uid=${targetUuid.toNumber()}`);
-            } else if (!isCurrentPlayer) {
-                this.logger.debug(`BuffEffect skipped (not current player): uid=${targetUuid.toNumber()} count=${BuffEffectSyncMsg.BuffEffects.length}`);
-            } else {
-                for (const buffEffect of BuffEffectSyncMsg.BuffEffects) {
-                    this.logger.debug(`BuffEffect uid=${targetUuid.toNumber()} type=${buffEffect.Type} buffUuid=${buffEffect.BuffUuid}`);
-                    this.userDataManager.processBuffEvent(targetUuid.toNumber(), buffEffect);
-                }
+        if (BuffEffectSyncMsg && BuffEffectSyncMsg.BuffEffects && isCurrentPlayer) {
+            for (const buffEffect of BuffEffectSyncMsg.BuffEffects) {
+                this.userDataManager.processBuffEvent(targetUuid.toNumber(), buffEffect);
             }
         }
 
@@ -311,6 +451,23 @@ class PacketProcessor {
         if (BuffInfoSyncMsg && BuffInfoSyncMsg.BuffInfos && BuffInfoSyncMsg.BuffInfos.length > 0 && isCurrentPlayer) {
             this.logger.debug(`BuffInfoSync for uid ${targetUuid.toNumber()}: ${BuffInfoSyncMsg.BuffInfos.length} buffs`);
             this.userDataManager.setBuffSnapshot(targetUuid.toNumber(), BuffInfoSyncMsg.BuffInfos);
+        }
+
+        // Raw field 10 binary parsing for buff operations (add/remove)
+        const buffInfosRaw = aoiSyncDelta.BuffInfosRaw;
+        if (buffInfosRaw && buffInfosRaw.length > 0 && isCurrentPlayer) {
+            try {
+                const buffEvents = decodeBuffField10(buffInfosRaw);
+                for (const ev of buffEvents) {
+                    if (ev.opType === 1 && ev.buffId && ev.buffId !== 1) {
+                        this.userDataManager.processField10BuffAdd(targetUuid.toNumber(), ev);
+                    } else if (ev.opType === 2) {
+                        this.userDataManager.processField10BuffRemove(targetUuid.toNumber(), ev);
+                    }
+                }
+            } catch (e) {
+                // Field 10 parsing failed, not critical
+            }
         }
 
         const skillEffect = aoiSyncDelta.SkillEffects;
@@ -468,48 +625,7 @@ class PacketProcessor {
         try {
             syncToMeDeltaInfo = pb.SyncToMeDeltaInfo.decode(payloadBuffer);
         } catch (e) {
-            // Try partial decode with length limit - truncate before the error
-            const errorMatch = e.message.match(/offset (\d+)/);
-            if (errorMatch) {
-                const errorOffset = parseInt(errorMatch[1]);
-                // Try decoding only up to the error point
-                const truncatedBuffer = payloadBuffer.slice(0, errorOffset);
-                try {
-                    // Try as AoiSyncToMeDelta (inner structure)
-                    const aoiSyncToMeDelta = pb.AoiSyncToMeDelta.decode(truncatedBuffer);
-                    if (aoiSyncToMeDelta && aoiSyncToMeDelta.BaseDelta) {
-                        this.logger.debug(`SyncToMeDeltaInfo truncated decode success at offset ${errorOffset}`);
-                        if (aoiSyncToMeDelta.BaseDelta.BuffInfos) {
-                            this.logger.debug(`Found BuffInfos in truncated packet!`);
-                        }
-                        this._processAoiSyncDelta(aoiSyncToMeDelta.BaseDelta);
-                        return;
-                    }
-                } catch (e2) {
-                    // Try skipping outer wrapper (field 1 length-delimited)
-                    try {
-                        // Skip varint length prefix if present
-                        let offset = 0;
-                        if (payloadBuffer[0] === 0x0a) { // field 1, length-delimited
-                            offset = 1;
-                            while (offset < payloadBuffer.length && (payloadBuffer[offset] & 0x80)) offset++;
-                            offset++; // skip last byte of varint
-                        }
-                        const innerBuffer = payloadBuffer.slice(offset, errorOffset);
-                        const aoiSyncToMeDelta2 = pb.AoiSyncToMeDelta.decode(innerBuffer);
-                        if (aoiSyncToMeDelta2 && aoiSyncToMeDelta2.BaseDelta) {
-                            this.logger.debug(`SyncToMeDeltaInfo inner decode success`);
-                            this._processAoiSyncDelta(aoiSyncToMeDelta2.BaseDelta);
-                            return;
-                        }
-                    } catch (e3) {
-                        // Fall through
-                    }
-                }
-            }
-            // Log first 200 bytes of failing packet for analysis
-            const hexPreview = payloadBuffer.slice(0, Math.min(200, payloadBuffer.length)).toString('hex');
-            this.logger.debug(`SyncToMeDeltaInfo decode error: ${e.message} | first bytes: ${hexPreview}`);
+            this.logger.debug(`SyncToMeDeltaInfo decode error: ${e.message}`);
             return;
         }
         // this.logger.debug(JSON.stringify(syncToMeDeltaInfo, null, 2));
@@ -833,32 +949,7 @@ class PacketProcessor {
     }
 
     _processReturnMsg(reader, isZstdCompressed) {
-        // Return messages are responses to client requests
-        // They might contain buff data in some cases
-        try {
-            const stubId = reader.readUInt32();
-            let msgPayload = reader.readRemaining();
-
-            if (isZstdCompressed) {
-                msgPayload = this._decompressPayload(msgPayload);
-            }
-
-            // Try to decode as various types that might contain buff data
-            try {
-                const aoiSyncDelta = pb.AoiSyncDelta.decode(msgPayload);
-                if (aoiSyncDelta && (aoiSyncDelta.BuffInfos || aoiSyncDelta.BuffEffect)) {
-                    this.logger.debug(`Return msg contains AoiSyncDelta with buff data`);
-                    this._processAoiSyncDelta(aoiSyncDelta);
-                    return;
-                }
-            } catch (e) {
-                // Not an AoiSyncDelta
-            }
-
-            this.logger.debug(`Unimplemented processing return (stubId=${stubId})`);
-        } catch (e) {
-            this.logger.debug(`Return msg parse error: ${e.message}`);
-        }
+        // Return messages - not currently needed for buff processing
     }
 
     processPacket(packets) {

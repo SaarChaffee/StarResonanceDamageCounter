@@ -970,10 +970,7 @@ class UserDataManager {
         const buffMap = this.buffCache.get(uid);
         for (const info of buffInfos) {
             const buffUuid = info.BuffUuid;
-            if (buffUuid == null) {
-                this.logger.debug(`Buff null uuid: uid=${uid} info=${JSON.stringify(info)}`);
-                continue;
-            }
+            if (buffUuid == null) continue;
             const createTime = info.CreateTime
                 ? (typeof info.CreateTime === 'object' ? info.CreateTime.toNumber() : Number(info.CreateTime))
                 : 0;
@@ -983,39 +980,30 @@ class UserDataManager {
             // buffUuid=2 + baseId=X → 移除信号：删除 buffUuid=X
             if (buffUuid === 2 && createTime === 0 && duration === 0) {
                 if (buffMap.has(baseId)) {
-                    this.logger.debug(`Buff remove signal: uid=${uid} removing buffUuid=${baseId}`);
                     buffMap.delete(baseId);
-                } else {
-                    this.logger.debug(`Buff remove signal (already gone): uid=${uid} buffUuid=${baseId}`);
                 }
                 continue;
             }
 
             // buffUuid=1 + baseId=X → 添加确认，忽略
             if (buffUuid === 1 && createTime === 0 && duration === 0) {
-                this.logger.debug(`Buff add-confirm: uid=${uid} baseId=${baseId}`);
                 continue;
             }
 
             // 跳过其他无效条目
             if (createTime === 0 && duration === 0) {
-                this.logger.debug(`Buff skip: uid=${uid} buffUuid=${buffUuid} baseId=${baseId}`);
                 continue;
             }
 
             const endTime = duration > 0 ? createTime + duration : 0;
 
-            // 使用 baseId 作为主键存储（而不是 buffUuid），这样同一个 buff 刷新时可以正确更新
-            // 如果已有同 baseId 的 buff，检查是否需要更新
+            // 同 baseId 的 buff 去重：新数据覆盖旧数据
             let shouldUpdate = true;
             for (const [existingKey, existingBuff] of buffMap) {
                 if (existingBuff.baseId === baseId && baseId !== 0) {
-                    // 同一个 baseId 的 buff，更新现有条目
                     if (createTime > existingBuff.createTime) {
-                        this.logger.debug(`Buff update: uid=${uid} baseId=${baseId} oldBuffUuid=${existingKey} newBuffUuid=${buffUuid} duration=${duration}`);
                         buffMap.delete(existingKey);
                     } else {
-                        // 旧数据，不更新
                         shouldUpdate = false;
                     }
                     break;
@@ -1023,7 +1011,6 @@ class UserDataManager {
             }
 
             if (shouldUpdate) {
-                this.logger.debug(`Buff merge: uid=${uid} buffUuid=${buffUuid} baseId=${baseId} duration=${duration} createTime=${createTime} endTime=${endTime} layer=${info.Layer}`);
                 buffMap.set(buffUuid, {
                     buffUuid,
                     baseId,
@@ -1098,26 +1085,81 @@ class UserDataManager {
         }
     }
 
+    /** Field10 raw buff add - 通过自定义解析处理 buff 添加/刷新 */
+    processField10BuffAdd(uid, ev) {
+        if (!this.buffCache.has(uid)) {
+            this.buffCache.set(uid, new Map());
+        }
+        const buffMap = this.buffCache.get(uid);
+        const baseId = ev.buffId;
+        if (!baseId || baseId <= 2) return;
+
+        const serverTime = this.getServerTime();
+        const duration = ev.durationMs || 0;
+        const endTime = duration > 0 ? serverTime + duration : 0;
+
+        // 查找是否已有同 baseId 的 buff（可能有不同 buffUuid）
+        let existingKey = null;
+        for (const [key, buff] of buffMap) {
+            if (buff.baseId === baseId) {
+                existingKey = key;
+                break;
+            }
+        }
+
+        if (existingKey !== null) {
+            // 更新现有 buff（刷新持续时间）
+            const existing = buffMap.get(existingKey);
+            existing.createTime = serverTime;
+            existing.endTime = endTime;
+            existing.duration = duration;
+            existing.layer = ev.stack || existing.layer || 1;
+        } else {
+            // 新增 buff
+            const key = `f10_${ev.slot || baseId}`;
+            buffMap.set(key, {
+                buffUuid: ev.slot || 0,
+                baseId,
+                level: 0,
+                layer: ev.stack || 1,
+                duration,
+                createTime: serverTime,
+                endTime,
+                fireUuid: 0,
+            });
+        }
+    }
+
+    /** Field10 raw buff remove */
+    processField10BuffRemove(uid, ev) {
+        if (!this.buffCache.has(uid)) return;
+        const buffMap = this.buffCache.get(uid);
+        const baseId = ev.buffId;
+
+        // 通过 baseId 查找并删除
+        if (baseId && baseId > 2) {
+            for (const [key, buff] of buffMap) {
+                if (buff.baseId === baseId) {
+                    buffMap.delete(key);
+                    return;
+                }
+            }
+        }
+    }
+
     /** 获取自己的 buff 数据 */
     getMyBuffData() {
         const serverTime = this.getServerTime();
         const result = { serverTime, buffs: [] };
-        // 过期容忍时间（毫秒）- 保留过期buff一段时间以应对同步延迟
-        const EXPIRY_GRACE_PERIOD = 3000;
-
         for (const [uid, buffMap] of this.buffCache) {
             const user = this.users.get(uid);
             const playerName = user ? user.name : '';
             const profession = user ? user.profession : '';
             const expired = [];
             for (const [buffUuid, buff] of buffMap) {
-                // 清理过期 buff（带容忍时间）
-                if (buff.endTime > 0 && buff.endTime + EXPIRY_GRACE_PERIOD <= serverTime) {
-                    expired.push(buffUuid);
-                    continue;
-                }
-                // 跳过已过期但在容忍时间内的buff（不显示但不删除）
+                // 清理过期 buff
                 if (buff.endTime > 0 && buff.endTime <= serverTime) {
+                    expired.push(buffUuid);
                     continue;
                 }
                 result.buffs.push({
