@@ -997,20 +997,15 @@ class UserDataManager {
 
             const endTime = duration > 0 ? createTime + duration : 0;
 
-            // 同 baseId 的 buff 去重：新数据覆盖旧数据
-            let shouldUpdate = true;
+            // 同 baseId 的 buff 去重：服务器数据始终覆盖本地
             for (const [existingKey, existingBuff] of buffMap) {
                 if (existingBuff.baseId === baseId && baseId !== 0) {
-                    if (createTime > existingBuff.createTime) {
-                        buffMap.delete(existingKey);
-                    } else {
-                        shouldUpdate = false;
-                    }
+                    buffMap.delete(existingKey);
                     break;
                 }
             }
 
-            if (shouldUpdate) {
+            {
                 buffMap.set(buffUuid, {
                     buffUuid,
                     baseId,
@@ -1111,8 +1106,13 @@ class UserDataManager {
             // 更新现有 buff（刷新持续时间）
             const existing = buffMap.get(existingKey);
             existing.createTime = serverTime;
-            existing.endTime = endTime;
-            existing.duration = duration;
+            if (duration > 0) {
+                existing.endTime = endTime;
+                existing.duration = duration;
+            } else if (existing.duration > 0) {
+                // 刷新事件无 durationMs，沿用已知 duration 重算 endTime
+                existing.endTime = serverTime + existing.duration;
+            }
             existing.layer = ev.stack || existing.layer || 1;
         } else {
             // 新增 buff
