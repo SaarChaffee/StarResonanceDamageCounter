@@ -976,7 +976,6 @@ class UserDataManager {
                 : 0;
             const duration = info.Duration || 0;
             const baseId = info.BaseId || 0;
-
             // buffUuid=2 + baseId=X → 移除信号：删除 buffUuid=X
             if (buffUuid === 2 && createTime === 0 && duration === 0) {
                 if (buffMap.has(baseId)) {
@@ -1106,6 +1105,7 @@ class UserDataManager {
             // 更新现有 buff（刷新持续时间）
             const existing = buffMap.get(existingKey);
             existing.createTime = serverTime;
+            existing.slot = ev.slot;
             if (duration > 0) {
                 existing.endTime = endTime;
                 existing.duration = duration;
@@ -1126,6 +1126,7 @@ class UserDataManager {
                 createTime: serverTime,
                 endTime,
                 fireUuid: 0,
+                slot: ev.slot,
             });
         }
     }
@@ -1145,6 +1146,16 @@ class UserDataManager {
                 }
             }
         }
+
+        // baseId 不可用时（remove 事件通常 buffId=undefined），通过 slot 查找
+        if (ev.slot != null) {
+            for (const [key, buff] of buffMap) {
+                if (buff.slot === ev.slot) {
+                    buffMap.delete(key);
+                    return;
+                }
+            }
+        }
     }
 
     /** 获取自己的 buff 数据 */
@@ -1155,11 +1166,12 @@ class UserDataManager {
             const user = this.users.get(uid);
             const playerName = user ? user.name : '';
             const profession = user ? user.profession : '';
-            const expired = [];
+            const stale = [];
             for (const [buffUuid, buff] of buffMap) {
-                // 清理过期 buff
-                if (buff.endTime > 0 && buff.endTime <= serverTime) {
-                    expired.push(buffUuid);
+                // 不主动删除过期 buff — 游戏可能静默刷新了 buff 持续时间
+                // 仅清理超过 5 分钟仍未收到 remove 事件的 buff（兜底）
+                if (buff.endTime > 0 && buff.endTime + 300000 <= serverTime) {
+                    stale.push(buffUuid);
                     continue;
                 }
                 result.buffs.push({
@@ -1170,7 +1182,7 @@ class UserDataManager {
                     buffName: buffConfig[buff.baseId] || null,
                 });
             }
-            for (const id of expired) {
+            for (const id of stale) {
                 buffMap.delete(id);
             }
         }
