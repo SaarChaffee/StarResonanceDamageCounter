@@ -1174,12 +1174,17 @@ class UserDataManager {
                     stale.push(buffUuid);
                     continue;
                 }
+                const buffName = buffConfig[buff.baseId] || null;
+                // 跳过无持续时间且不在配置中的 buff（被动/职业/协会 buff）
+                if (buff.endTime === 0 && !buffName) {
+                    continue;
+                }
                 result.buffs.push({
                     uid,
                     playerName,
                     profession,
                     ...buff,
-                    buffName: buffConfig[buff.baseId] || null,
+                    buffName,
                 });
             }
             for (const id of stale) {
