@@ -1170,12 +1170,13 @@ class UserDataManager {
                 const serverTime = this.getServerTime();
                 const tickDuration = ev.buffId; // opType=6 中 buffId 字段实际是 duration
 
-                // 如果 endTime 已过但仍收到 tick → 游戏静默刷新了此 buff
-                if (buff.endTime > 0 && buff.endTime <= serverTime) {
+                // 如果 endTime 即将到期或已过但仍收到 tick → 游戏静默刷新了此 buff
+                // 用 2s 容差，因为 tick 间隔约 3-4s，且 serverTime 有误差
+                if (buff.endTime > 0 && buff.endTime - 2000 <= serverTime) {
                     buff.createTime = serverTime;
                     buff.duration = tickDuration || buff.duration;
                     buff.endTime = serverTime + buff.duration;
-                    this.logger.debug(`Buff tick refresh: slot=${ev.slot} baseId=${buff.baseId} newEndTime=${buff.endTime}`);
+                    this.logger.debug(`Buff tick refresh: slot=${ev.slot} baseId=${buff.baseId} remaining was ${buff.endTime - buff.duration - serverTime}ms`);
                 }
 
                 // 补充缺失的 duration
