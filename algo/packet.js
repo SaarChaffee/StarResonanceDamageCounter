@@ -447,34 +447,33 @@ class PacketProcessor {
             }
         }
 
-        // Field 10 处理：先尝试 raw binary 解析（add/remove 事件），
-        // 仅当 raw 解析无事件时才回退到标准 BuffInfoSync 快照
-        let rawEventsProcessed = false;
+        // Field 10 包含两种数据（可共存于同一消息中）：
+        // - field 1: 标准 BuffInfoSync 快照（含 CreateTime, Duration 等完整数据）
+        // - field 2: raw binary 事件（add/remove 信号，可能不含 duration）
+        // 两者必须都处理：标准快照提供权威数据，raw 事件提供 add/remove 信号
+
+        const BuffInfoSyncMsg = aoiSyncDelta.BuffInfos;
+        if (BuffInfoSyncMsg && BuffInfoSyncMsg.BuffInfos && BuffInfoSyncMsg.BuffInfos.length > 0 && isCurrentPlayer) {
+            this.logger.debug(`BuffInfoSync for uid ${targetUuid.toNumber()}: ${BuffInfoSyncMsg.BuffInfos.length} buffs`);
+            this.userDataManager.setBuffSnapshot(targetUuid.toNumber(), BuffInfoSyncMsg.BuffInfos);
+        }
+
+        // Raw field 10 binary parsing for buff add/remove events
         const buffInfosRaw = aoiSyncDelta.BuffInfosRaw;
         if (buffInfosRaw && buffInfosRaw.length > 0 && isCurrentPlayer) {
             try {
                 const buffEvents = decodeBuffField10(buffInfosRaw);
-                if (buffEvents.length > 0) {
-                    rawEventsProcessed = true;
-                    for (const ev of buffEvents) {
-                        this.logger.debug(`Field10 event: op=${ev.opType} slot=${ev.slot} buffId=${ev.buffId} dur=${ev.durationMs} stack=${ev.stack}`);
-                        if (ev.opType === 1 && ev.buffId && ev.buffId !== 1) {
-                            this.userDataManager.processField10BuffAdd(targetUuid.toNumber(), ev);
-                        } else if (ev.opType === 2) {
-                            this.userDataManager.processField10BuffRemove(targetUuid.toNumber(), ev);
-                        }
+                for (const ev of buffEvents) {
+                    if (ev.opType === 1 && ev.buffId && ev.buffId !== 1) {
+                        this.logger.debug(`Field10 add: slot=${ev.slot} buffId=${ev.buffId} dur=${ev.durationMs} stack=${ev.stack}`);
+                        this.userDataManager.processField10BuffAdd(targetUuid.toNumber(), ev);
+                    } else if (ev.opType === 2) {
+                        this.logger.debug(`Field10 remove: slot=${ev.slot} buffId=${ev.buffId}`);
+                        this.userDataManager.processField10BuffRemove(targetUuid.toNumber(), ev);
                     }
                 }
             } catch (e) {
-                // Field 10 raw parsing failed, fall through to standard decode
-            }
-        }
-
-        if (!rawEventsProcessed) {
-            const BuffInfoSyncMsg = aoiSyncDelta.BuffInfos;
-            if (BuffInfoSyncMsg && BuffInfoSyncMsg.BuffInfos && BuffInfoSyncMsg.BuffInfos.length > 0 && isCurrentPlayer) {
-                this.logger.debug(`BuffInfoSync for uid ${targetUuid.toNumber()}: ${BuffInfoSyncMsg.BuffInfos.length} buffs`);
-                this.userDataManager.setBuffSnapshot(targetUuid.toNumber(), BuffInfoSyncMsg.BuffInfos);
+                // Field 10 raw parsing failed, not critical
             }
         }
 
