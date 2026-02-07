@@ -1158,6 +1158,36 @@ class UserDataManager {
         }
     }
 
+    /** Field10 buff tick (opType=6) — buff 心跳信号，表示 buff 仍然存活
+     *  ev.buffId 实际是 duration，ev.stack 是服务器时间戳 */
+    processField10BuffTick(uid, ev) {
+        if (!this.buffCache.has(uid)) return;
+        const buffMap = this.buffCache.get(uid);
+        if (ev.slot == null) return;
+
+        for (const [key, buff] of buffMap) {
+            if (buff.slot === ev.slot) {
+                const serverTime = this.getServerTime();
+                const tickDuration = ev.buffId; // opType=6 中 buffId 字段实际是 duration
+
+                // 如果 endTime 已过但仍收到 tick → 游戏静默刷新了此 buff
+                if (buff.endTime > 0 && buff.endTime <= serverTime) {
+                    buff.createTime = serverTime;
+                    buff.duration = tickDuration || buff.duration;
+                    buff.endTime = serverTime + buff.duration;
+                    this.logger.debug(`Buff tick refresh: slot=${ev.slot} baseId=${buff.baseId} newEndTime=${buff.endTime}`);
+                }
+
+                // 补充缺失的 duration
+                if (tickDuration && tickDuration > 0 && buff.duration === 0) {
+                    buff.duration = tickDuration;
+                    buff.endTime = buff.createTime + buff.duration;
+                }
+                return;
+            }
+        }
+    }
+
     /** 获取自己的 buff 数据 */
     getMyBuffData() {
         const serverTime = this.getServerTime();

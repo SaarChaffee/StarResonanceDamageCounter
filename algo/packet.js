@@ -475,6 +475,9 @@ class PacketProcessor {
                         this.userDataManager.processField10BuffAdd(targetUuid.toNumber(), ev);
                     } else if (ev.opType === 2) {
                         this.userDataManager.processField10BuffRemove(targetUuid.toNumber(), ev);
+                    } else if (ev.opType === 6) {
+                        // opType=6 是 buff 心跳 tick：buffId 字段实际是 duration，stack 是服务器时间戳
+                        this.userDataManager.processField10BuffTick(targetUuid.toNumber(), ev);
                     }
                 }
             } catch (e) {
